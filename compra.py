@@ -1,33 +1,44 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+from datetime import datetime
 
 st.set_page_config(page_title="Go MED SAÚDE", page_icon=":bar_chart:", layout="wide")
 
 df = pd.read_csv('df_compra.csv')
+
+# Converter as colunas de data para o tipo datetime, tratando erros de parsing
+df['data entrega prevista'] = pd.to_datetime(df['data entrega prevista'], errors='coerce')
+df['data entrada'] = pd.to_datetime(df['data entrada'], errors='coerce')
 
 def formatar_moeda(valor, simbolo_moeda="R$"):
     if pd.isna(valor):
         return ''
     return f"{simbolo_moeda} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def aplicar_filtros(df, ano='todos', mes='todos'):
+def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos'):
     df_filtrado = df.copy()
     if ano != 'todos':
         df_filtrado = df_filtrado[df_filtrado['ano'] == ano]
     if mes != 'todos':
         df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
-    
+    if usuario != 'todos':
+        df_filtrado = df_filtrado[df_filtrado['usuario'] == usuario]
+
     return df_filtrado
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     ano = st.selectbox("Ano", ['todos'] + sorted(list(df['ano'].unique())))
 with col2:
     mes = st.selectbox("Mês", ['todos'] + sorted(list(df['mes'].unique())))
-    
+with col3:
+    usuario = st.selectbox("Usuário", ['todos'] + sorted(list(df['usuario'].unique())))
 
-    df_filtrado = aplicar_filtros(df, ano, mes)
+
+df_filtrado = aplicar_filtros(df, ano, mes, usuario)
+
+
 
 def calcular_metricas(df):
     qunatidade_total_pedidos = df['numeropedido'].nunique()
@@ -73,9 +84,33 @@ with col5:
     st.markdown(card_style("Pedidos Pendentes", qtd_pendentes), unsafe_allow_html=True)
 
 
+# --- ALERTA DE PEDIDOS ATRASADOS ---
+hoje = datetime.now().date()
+pedidos_atrasados = df_filtrado[
+    (df_filtrado['data entrega prevista'].dt.date < hoje) & (df_filtrado['data entrada'].isna())
+]['numeropedido'].unique() 
 
-st.subheader(f"Lista de Pedodos")
-st.dataframe(df)
+if len(pedidos_atrasados) > 0:
+    st.warning(f"⚠️ Atenção! {len(pedidos_atrasados)} pedidos estão atrasados:")
+    # Filtrar o DataFrame original para exibir informações dos pedidos atrasados únicos
+    df_pedidos_atrasados_unicos = df_filtrado[df_filtrado['numeropedido'].isin(pedidos_atrasados)][['numeropedido', 'data entrega prevista', 'fornecedor', 'usuario']].drop_duplicates(subset=['numeropedido'])
+    # Formatar a coluna de data para o formato brasileiro
+    df_pedidos_atrasados_unicos['data entrega prevista'] = df_pedidos_atrasados_unicos['data entrega prevista'].dt.strftime('%d/%m/%Y')
+    st.dataframe(df_pedidos_atrasados_unicos)
+    st.markdown("---")
+# --- FIM DO ALERTA ---
+
+
+
+def lista_pedidos(df):
+    st.subheader(f"Lista de Pedidos")
+    colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'usuario', 'descricao produto',
+                        'prazo', 'tipo produto', 'status pedido']
+    df_exibir = df[colunas_exibir]
+
+    st.dataframe(df_exibir)
+
+lista_pedidos(df_filtrado)
 
 def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
@@ -114,7 +149,7 @@ def listar_top_10_fornecedores(df):
     if not top_10_fornecedores.empty:
         st.subheader("Top 10 Maiores Fornecedores (por Valor Total dos Pedidos)")
         top_10_df = pd.DataFrame({'Fornecedor': top_10_fornecedores.index,
-                                  'Valor Total dos Pedidos': top_10_fornecedores.values})
+                                    'Valor Total dos Pedidos': top_10_fornecedores.values})
         top_10_df['Valor Total dos Pedidos'] = top_10_df['Valor Total dos Pedidos'].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
         st.dataframe(top_10_df)
     else:
@@ -127,32 +162,32 @@ listar_top_10_fornecedores(df_filtrado)
 
 
 # Determinar o mês e ano atual e anterior com base nos dados filtrados
-if not df_filtrado.empty:
-        ano_atual_filtrado = df_filtrado['ano'].max()
-        mes_atual_filtrado = df_filtrado[df_filtrado['ano'] == ano_atual_filtrado]['mes'].max()
+if not df.empty:
+    ano_atual = df['ano'].max()
+    mes_atual = df[df['ano'] == ano_atual]['mes'].max()
 
-        ano_anterior_filtrado = ano_atual_filtrado
-        mes_anterior_filtrado = mes_atual_filtrado - 1
-        if mes_anterior_filtrado < 1:
-            mes_anterior_filtrado = 12
-            ano_anterior_filtrado -= 1
+    ano_anterior = ano_atual
+    mes_anterior = mes_atual - 1
+    if mes_anterior < 1:
+        mes_anterior = 12
+        ano_anterior -= 1
 
-        df_atual_filtrado = df_filtrado[(df_filtrado['ano'] == ano_atual_filtrado) & (df_filtrado['mes'] == mes_atual_filtrado)]
-        df_anterior_filtrado = df_filtrado[(df_filtrado['ano'] == ano_anterior_filtrado) & (df_filtrado['mes'] == mes_anterior_filtrado)]
+    df_atual = df[(df['ano'] == ano_atual) & (df['mes'] == mes_atual)]
+    df_anterior = df[(df['ano'] == ano_anterior) & (df['mes'] == mes_anterior)]
 
-        # Agrupar e contar a quantidade de cada produto no mês anterior
-        quantidade_anterior = df_anterior_filtrado.groupby('descricao produto')['total itens'].sum().reset_index()
-        quantidade_anterior.rename(columns={'total itens': f'Quantidade {mes_anterior_filtrado}/{ano_anterior_filtrado}'}, inplace=True)
+    # Agrupar e contar a quantidade de cada produto no mês anterior
+    quantidade_anterior = df_anterior.groupby('descricao produto')['total itens'].sum().reset_index()
+    quantidade_anterior.rename(columns={'total itens': f'Quantidade {mes_anterior}/{ano_anterior}'}, inplace=True)
 
-        # Agrupar e contar a quantidade de cada produto no mês atual
-        quantidade_atual = df_atual_filtrado.groupby('descricao produto')['total itens'].sum().reset_index()
-        quantidade_atual.rename(columns={'total itens': f'Quantidade {mes_atual_filtrado}/{ano_atual_filtrado}'}, inplace=True)
+    # Agrupar e contar a quantidade de cada produto no mês atual
+    quantidade_atual = df_atual.groupby('descricao produto')['total itens'].sum().reset_index()
+    quantidade_atual.rename(columns={'total itens': f'Quantidade {mes_atual}/{ano_atual}'}, inplace=True)
 
-        # Merge dos DataFrames para ter a quantidade dos dois meses lado a lado
-        df_comparativo = pd.merge(quantidade_anterior, quantidade_atual, on='descricao produto', how='left').fillna(0)
+    # Merge dos DataFrames para ter a quantidade dos dois meses lado a lado
+    df_comparativo = pd.merge(quantidade_anterior, quantidade_atual, on='descricao produto', how='left').fillna(0)
 
-        st.subheader(f"Comparativo de Produtos Comprados em {mes_anterior_filtrado}/{ano_anterior_filtrado} vs {mes_atual_filtrado}/{ano_atual_filtrado} (Filtro Aplicado):")
-        st.dataframe(df_comparativo)
+    st.subheader(f"Comparativo de Produtos Comprados em {mes_anterior}/{ano_anterior} vs {mes_atual}/{ano_atual}:")
+    st.dataframe(df_comparativo)
 
 else:
     st.info("Não há dados para análise de produtos com os filtros aplicados.")
