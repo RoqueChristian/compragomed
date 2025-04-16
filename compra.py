@@ -116,7 +116,7 @@ if not df_filtrado.empty:
                             title='<b>Valor Total dos Pedidos por Mês (Filtrado)</b>',
                             text='valor_formatado', # Exibir o valor formatado nas barras
                             hover_data={'valor liquido item': ':.2f', 'mes_nome': True},
-                            height=700, width=1100)
+                            height=900, width=1100)
     fig_valor_mes.update_traces(textposition='outside', textfont_size=28)
     st.plotly_chart(fig_valor_mes, use_container_width=True)
 else:
@@ -257,9 +257,6 @@ def listar_top_10_fornecedores(df):
 # Usar o DATAFRAME FILTRADO na função
 listar_top_10_fornecedores(df_filtrado)
 
-
-
-
 # Determinar o mês e ano atual e anterior com base nos dados filtrados
 if not df.empty:
     ano_atual = df['ano'].max()
@@ -274,16 +271,32 @@ if not df.empty:
     df_atual = df[(df['ano'] == ano_atual) & (df['mes'] == mes_atual)]
     df_anterior = df[(df['ano'] == ano_anterior) & (df['mes'] == mes_anterior)]
 
-    # Agrupar e contar a quantidade de cada produto no mês anterior
-    quantidade_anterior = df_anterior.groupby('descricao produto')['total itens'].sum().reset_index()
-    quantidade_anterior.rename(columns={'total itens': f'Quantidade {mes_anterior}/{ano_anterior}'}, inplace=True)
+    # Agrupar e obter a média do preço unitário e a soma da quantidade de cada produto no mês anterior
+    preco_anterior = df_anterior.groupby('descricao produto')['preco unitario liquido item'].mean().reset_index()
+    preco_anterior.rename(columns={'preco unitario liquido item': f'Preço Unitário {mes_anterior}/{ano_anterior}'}, inplace=True)
+    quantidade_anterior = df_anterior.groupby('descricao produto')['qtd pedido item'].sum().reset_index()
+    quantidade_anterior.rename(columns={'qtd pedido item': f'Quantidade {mes_anterior}/{ano_anterior}'}, inplace=True)
 
-    # Agrupar e contar a quantidade de cada produto no mês atual
-    quantidade_atual = df_atual.groupby('descricao produto')['total itens'].sum().reset_index()
-    quantidade_atual.rename(columns={'total itens': f'Quantidade {mes_atual}/{ano_atual}'}, inplace=True)
+    # Agrupar e obter a média do preço unitário e a soma da quantidade de cada produto no mês atual
+    preco_atual = df_atual.groupby('descricao produto')['preco unitario liquido item'].mean().reset_index()
+    preco_atual.rename(columns={'preco unitario liquido item': f'Preço Unitário {mes_atual}/{ano_atual}'}, inplace=True)
+    quantidade_atual = df_atual.groupby('descricao produto')['qtd pedido item'].sum().reset_index()
+    quantidade_atual.rename(columns={'qtd pedido item': f'Quantidade {mes_atual}/{ano_atual}'}, inplace=True)
 
-    # Merge dos DataFrames para ter a quantidade dos dois meses lado a lado
-    df_comparativo = pd.merge(quantidade_anterior, quantidade_atual, on='descricao produto', how='left').fillna(0)
+    # Merge dos DataFrames para ter a quantidade e o preço dos dois meses lado a lado
+    df_comparativo = pd.merge(quantidade_anterior, quantidade_atual, on='descricao produto', how='outer').fillna(0)
+    df_comparativo = pd.merge(df_comparativo, preco_anterior, on='descricao produto', how='left').fillna(0)
+    df_comparativo = pd.merge(df_comparativo, preco_atual, on='descricao produto', how='left').fillna(0)
+
+    # Formatar as colunas de preço usando a função formatar_moeda
+    coluna_preco_anterior = f'Preço Unitário {mes_anterior}/{ano_anterior}'
+    coluna_preco_atual = f'Preço Unitário {mes_atual}/{ano_atual}'
+
+    if coluna_preco_anterior in df_comparativo.columns:
+        df_comparativo[coluna_preco_anterior] = df_comparativo[coluna_preco_anterior].apply(formatar_moeda)
+
+    if coluna_preco_atual in df_comparativo.columns:
+        df_comparativo[coluna_preco_atual] = df_comparativo[coluna_preco_atual].apply(formatar_moeda)
 
     st.subheader(f"Comparativo de Produtos Comprados em {mes_anterior}/{ano_anterior} vs {mes_atual}/{ano_atual}:")
     st.dataframe(df_comparativo)
