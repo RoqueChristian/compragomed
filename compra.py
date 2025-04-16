@@ -49,8 +49,8 @@ df_filtrado = aplicar_filtros(df, ano, mes, usuario)
 
 def calcular_metricas(df):
     qunatidade_total_pedidos = df['numeropedido'].nunique()
-    valor_total_pedidos = df['valor bruto total itens'].sum()
-    quantidade_total_itens = df['total itens'].sum()
+    valor_total_pedidos = df['valor liquido item'].sum()
+    quantidade_total_itens = df['qtd pedido item'].sum()
     quantidade_pedidos_entregues = df[df['status pedido'] == 'recebido']['numeropedido'].nunique()
     quantidade_pedidos_pendentes = df[df['status pedido'] == 'entrega pendente']['numeropedido'].nunique()
     return qunatidade_total_pedidos, valor_total_pedidos, quantidade_total_itens, quantidade_pedidos_entregues, quantidade_pedidos_pendentes
@@ -104,18 +104,18 @@ st.plotly_chart(fig_status, use_container_width=True)
 
 # Gráfico de Valor Total dos Pedidos por Mês (Filtrado)
 if not df_filtrado.empty:
-    valor_por_mes = df_filtrado.groupby(['ano', 'mes'])['valor bruto total itens'].sum().reset_index()
+    valor_por_mes = df_filtrado.groupby(['ano', 'mes'])['valor liquido item'].sum().reset_index()
     valor_por_mes['data_ref'] = pd.to_datetime(valor_por_mes['ano'].astype(str) + '-' + valor_por_mes['mes'].astype(str) + '-01')
     valor_por_mes = valor_por_mes.sort_values(by='data_ref')
     valor_por_mes['mes_nome'] = valor_por_mes['data_ref'].dt.strftime('%B')
     valor_por_mes['mes_nome'] = valor_por_mes['mes_nome'].str[0].str.upper() + valor_por_mes['mes_nome'].str[1:]
     # Formatar os valores para exibição no gráfico e no hover
-    valor_por_mes['valor_formatado'] = valor_por_mes['valor bruto total itens'].apply(formatar_moeda)
-    fig_valor_mes = px.bar(valor_por_mes, x='mes_nome', y='valor bruto total itens',
-                            labels={'valor bruto total itens': 'Valor Total', 'mes_nome': 'Mês'},
+    valor_por_mes['valor_formatado'] = valor_por_mes['valor liquido item'].apply(formatar_moeda)
+    fig_valor_mes = px.bar(valor_por_mes, x='mes_nome', y='valor liquido item',
+                            labels={'valor liquido item': 'Valor Total', 'mes_nome': 'Mês'},
                             title='<b>Valor Total dos Pedidos por Mês (Filtrado)</b>',
                             text='valor_formatado', # Exibir o valor formatado nas barras
-                            hover_data={'valor bruto total itens': ':.2f', 'mes_nome': True},
+                            hover_data={'valor liquido item': ':.2f', 'mes_nome': True},
                             height=700, width=1100)
     fig_valor_mes.update_traces(textposition='outside', textfont_size=28)
     st.plotly_chart(fig_valor_mes, use_container_width=True)
@@ -125,13 +125,13 @@ else:
 st.markdown("---")
 
 # Gráfico de Top 10 Fornecedores por Valor Total
-top_10_fornecedores_graf = df_filtrado.groupby('fornecedor')['valor bruto total itens'].sum().nlargest(10).reset_index()
-top_10_fornecedores_graf['valor_formatado'] = top_10_fornecedores_graf['valor bruto total itens'].apply(formatar_moeda)
-fig_top_fornecedores = px.bar(top_10_fornecedores_graf, x='fornecedor', y='valor bruto total itens',
-                               labels={'valor bruto total itens': 'Valor Total', 'fornecedor': 'Fornecedor'},
+top_10_fornecedores_graf = df_filtrado.groupby('fornecedor')['valor liquido item'].sum().nlargest(10).reset_index()
+top_10_fornecedores_graf['valor_formatado'] = top_10_fornecedores_graf['valor liquido item'].apply(formatar_moeda)
+fig_top_fornecedores = px.bar(top_10_fornecedores_graf, x='fornecedor', y='valor liquido item',
+                               labels={'valor liquido item': 'Valor Total', 'fornecedor': 'Fornecedor'},
                                title='<b>Top 10 Fornecedores por Valor Total</b>',
                                text='valor_formatado', 
-                               hover_data={'valor bruto total itens': ':.2f', 'fornecedor': True}, 
+                               hover_data={'valor liquido item': ':.2f', 'fornecedor': True}, 
                                height=900, width=1100) 
 fig_top_fornecedores.update_traces(textposition='outside', textfont_size=28)
 st.plotly_chart(fig_top_fornecedores, use_container_width=True)
@@ -211,13 +211,13 @@ def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
-        colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'total itens', 'valor bruto total itens']
+        colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'total itens', 'valor liquido item']
         pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy() # Crie uma cópia
         # Formatar as colunas de data
         for col in ['data emissao', 'data entrega prevista']:
             if col in pedidos_pendentes_exibir.columns:
                 pedidos_pendentes_exibir[col] = pedidos_pendentes_exibir[col].dt.strftime('%d/%m/%Y')
-        pedidos_pendentes_exibir['valor bruto total itens'] = pedidos_pendentes_exibir['valor bruto total itens'].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
+        pedidos_pendentes_exibir['valor liquido item'] = pedidos_pendentes_exibir['valor liquido item'].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
         st.dataframe(pedidos_pendentes_exibir)
     else:
         st.info("Não há pedidos com entrega pendente.")
@@ -233,11 +233,11 @@ def listar_top_10_fornecedores(df):
         st.info("O DataFrame filtrado está vazio, não é possível listar os top 10 fornecedores.")
         return
 
-    if 'fornecedor' not in df.columns or 'valor bruto total itens' not in df.columns:
-        st.error("Colunas 'fornecedor' ou 'valor bruto total itens' não encontradas no DataFrame filtrado.")
+    if 'fornecedor' not in df.columns or 'valor liquido item' not in df.columns:
+        st.error("Colunas 'fornecedor' ou 'valor liquido item' não encontradas no DataFrame filtrado.")
         return
 
-    total_por_fornecedor = df.groupby('fornecedor')['valor bruto total itens'].sum()
+    total_por_fornecedor = df.groupby('fornecedor')['valor liquido item'].sum()
 
     if total_por_fornecedor.empty:
         st.info("Não há dados de valor total por fornecedor após o agrupamento com o filtro aplicado.")
