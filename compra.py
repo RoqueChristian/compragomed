@@ -86,8 +86,8 @@ def calcular_metricas(df):
     qunatidade_total_pedidos = df['numeropedido'].nunique()
     valor_total_pedidos = df['valor liquido item'].sum()
     quantidade_total_itens = df['qtd pedido item'].sum()
-    quantidade_pedidos_entregues = df[df['status pedido'] == 'recebido']['numeropedido'].nunique()
-    quantidade_pedidos_pendentes = df[df['status pedido'] == 'entrega pendente']['numeropedido'].nunique()
+    quantidade_pedidos_entregues = df[df['situacao pedido'] == 'fechado pedido chegou']['numeropedido'].nunique()
+    quantidade_pedidos_pendentes = df[df['situacao pedido'] == 'pendente']['numeropedido'].nunique()
     return qunatidade_total_pedidos, valor_total_pedidos, quantidade_total_itens, quantidade_pedidos_entregues, quantidade_pedidos_pendentes
 
 def card_style(metric_name, value, color="#FFFFFF", bg_color="#262730"):
@@ -187,13 +187,13 @@ st.markdown("---")
 
 
 def listar_pedidos_pendentes_detalhado(df):
-    pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
+    pedidos_pendentes = df[df['situacao pedido'] == 'pendente'].copy()
     pedidos_unicos = pedidos_pendentes['numeropedido'].nunique()
     if pedidos_unicos > 0:
         st.warning(f"⚠️ Atenção! {pedidos_unicos} pedidos estão com entrega pendente:")
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
-        colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'data entrada', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
+        colunas_exibir = ['numeropedido', 'status pedido', 'data emissao', 'data entrega prevista', 'data entrada', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
         pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy()
 
         for col in ['data emissao', 'data entrega prevista']:
