@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from datetime import datetime
-import plotly.express as px 
+import plotly.express as px
 import locale
 
 try:
@@ -28,21 +28,53 @@ def formatar_moeda(valor, simbolo_moeda="R$"):
 
 def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos', situacao='todos'):
     df_filtrado = df.copy()
-    if ano != 'todos':
-        df_filtrado = df_filtrado[df_filtrado['ano'] == ano]
-    if mes != 'todos':
-        df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
+    ano_atual = datetime.now().year
+    meses_abreviados_num_para_abv = {
+        1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
+        7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
+    }
+    meses_abreviados_abv_para_num = {v: k for k, v in meses_abreviados_num_para_abv.items()}
+
+    if ano == 'todos':
+        df_filtrado = df_filtrado[df_filtrado['ano'] == ano_atual]
+    elif ano != 'todos':
+        df_filtrado = df_filtrado[df_filtrado['ano'] == int(ano)]
+
+    if mes == 'todos':
+        df_filtrado['mes_nome'] = df_filtrado['mes'].map(meses_abreviados_num_para_abv)
+    elif mes != 'todos':
+        if mes in meses_abreviados_abv_para_num:
+            df_filtrado = df_filtrado[df_filtrado['mes'] == meses_abreviados_abv_para_num[mes]]
+            df_filtrado['mes_nome'] = mes
+        elif isinstance(mes, int):
+            df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
+            df_filtrado['mes_nome'] = meses_abreviados_num_para_abv.get(mes)
+        else:
+            df_filtrado['mes_nome'] = None  # Ou alguma outra forma de indicar um mês inválido
+
     if usuario != 'todos':
         df_filtrado = df_filtrado[df_filtrado['usuario'] == usuario]
+
     if situacao != 'todos':
         df_filtrado = df_filtrado[df_filtrado['situacao pedido'] == situacao]
+
     return df_filtrado
+
+ano_atual = datetime.now().year
+meses_abreviados_num_para_abv = {
+    1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
+    7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
+}
+meses_ano_atual_numericos = sorted(list(df[df['ano'] == ano_atual]['mes'].unique()))
+meses_ano_atual_nomes = ['todos'] + [meses_abreviados_num_para_abv[mes] for mes in meses_ano_atual_numericos]
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    ano = st.selectbox("Ano", ['todos'] + sorted(list(df['ano'].unique())))
+    anos_unicos = ['todos'] + sorted(list(df['ano'].unique()))
+    index_ano_atual = anos_unicos.index(ano_atual) if ano_atual in anos_unicos else 0
+    ano = st.selectbox("Ano", anos_unicos, index=index_ano_atual)
 with col2:
-    mes = st.selectbox("Mês", ['todos'] + sorted(list(df['mes'].unique())))
+    mes = st.selectbox("Mês", meses_ano_atual_nomes)
 with col3:
     usuario = st.selectbox("Usuário", ['todos'] + sorted(list(df['usuario'].unique())))
 with col4:
@@ -100,22 +132,22 @@ st.markdown("---")
 status_counts = df_filtrado['status pedido'].value_counts().reset_index()
 status_counts.columns = ['status pedido', 'quantidade']
 fig_status = px.pie(status_counts, names='status pedido', values='quantidade',
-                        title='<b>Distribuição de Status dos Pedidos</b>')
+                    title='<b>Distribuição de Status dos Pedidos</b>')
 st.plotly_chart(fig_status, use_container_width=True)
 
 # Gráfico de Valor Total dos Pedidos por Mês (Filtrado)
 if not df_filtrado.empty:
-    valor_por_mes = df_filtrado.groupby(['ano', 'mes'])['valor liquido item'].sum().reset_index()
-    valor_por_mes['data_ref'] = pd.to_datetime(valor_por_mes['ano'].astype(str) + '-' + valor_por_mes['mes'].astype(str) + '-01')
-    valor_por_mes = valor_por_mes.sort_values(by='data_ref')
-    valor_por_mes['mes_nome'] = valor_por_mes['data_ref'].dt.strftime('%B')
-    valor_por_mes['mes_nome'] = valor_por_mes['mes_nome'].str[0].str.upper() + valor_por_mes['mes_nome'].str[1:]
+    valor_por_mes = df_filtrado.groupby(['ano', 'mes_nome'])['valor liquido item'].sum().reset_index()
+    valor_por_mes.rename(columns={'mes_nome': 'mes'}, inplace=True) # Renomeia para usar a coluna de nome do mês
+    meses_ordenados = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+    valor_por_mes['mes_ordenado'] = pd.Categorical(valor_por_mes['mes'], categories=meses_ordenados, ordered=True)
+    valor_por_mes = valor_por_mes.sort_values('mes_ordenado')
     valor_por_mes['valor_formatado'] = valor_por_mes['valor liquido item'].apply(formatar_moeda)
-    fig_valor_mes = px.bar(valor_por_mes, x='mes_nome', y='valor liquido item',
-                            labels={'valor liquido item': 'Valor Total', 'mes_nome': 'Mês'},
+    fig_valor_mes = px.bar(valor_por_mes, x='mes', y='valor liquido item',
+                            labels={'valor liquido item': 'Valor Total', 'mes': 'Mês'},
                             title='<b>Valor Total dos Pedidos por Mês (Filtrado)</b>',
-                            text='valor_formatado', 
-                            hover_data={'valor liquido item': ':.2f', 'mes_nome': True},
+                            text='valor_formatado',
+                            hover_data={'valor liquido item': ':.2f', 'mes': True},
                             height=900, width=1100)
     fig_valor_mes.update_traces(textposition='outside', textfont_size=28)
     st.plotly_chart(fig_valor_mes, use_container_width=True)
@@ -128,11 +160,11 @@ st.markdown("---")
 top_10_fornecedores_graf = df_filtrado.groupby('fornecedor')['valor liquido item'].sum().nlargest(10).reset_index()
 top_10_fornecedores_graf['valor_formatado'] = top_10_fornecedores_graf['valor liquido item'].apply(formatar_moeda)
 fig_top_fornecedores = px.bar(top_10_fornecedores_graf, x='fornecedor', y='valor liquido item',
-                               labels={'valor liquido item': 'Valor Total', 'fornecedor': 'Fornecedor'},
-                               title='<b>Top 10 Fornecedores por Valor Total</b>',
-                               text='valor_formatado', 
-                               hover_data={'valor liquido item': ':.2f', 'fornecedor': True}, 
-                               height=900, width=1100) 
+                                 labels={'valor liquido item': 'Valor Total', 'fornecedor': 'Fornecedor'},
+                                 title='<b>Top 10 Fornecedores por Valor Total</b>',
+                                 text='valor_formatado',
+                                 hover_data={'valor liquido item': ':.2f', 'fornecedor': True},
+                                 height=900, width=1100)
 fig_top_fornecedores.update_traces(textposition='outside', textfont_size=28)
 st.plotly_chart(fig_top_fornecedores, use_container_width=True)
 
@@ -143,7 +175,7 @@ st.markdown("---")
 hoje = datetime.now().date()
 pedidos_atrasados = df_filtrado[
     (df_filtrado['data entrega prevista'].dt.date < hoje) & (df_filtrado['data entrada'].isna())
-]['numeropedido'].unique() 
+]['numeropedido'].unique()
 
 if len(pedidos_atrasados) > 0:
     st.warning(f"⚠️ Atenção! {len(pedidos_atrasados)} pedidos estão atrasados:")
@@ -158,9 +190,9 @@ def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
-        colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'total itens', 'valor liquido item']
-        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy() 
-        
+        colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
+        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy()
+
         for col in ['data emissao', 'data entrega prevista']:
             if col in pedidos_pendentes_exibir.columns:
                 pedidos_pendentes_exibir[col] = pedidos_pendentes_exibir[col].dt.strftime('%d/%m/%Y')
