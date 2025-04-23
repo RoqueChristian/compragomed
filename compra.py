@@ -17,7 +17,6 @@ st.set_page_config(page_title="Go MED SAÚDE", page_icon=":bar_chart:", layout="
 
 df = pd.read_csv('df_compra.csv')
 
-# Converter as colunas de data para o tipo datetime, tratando erros de parsing
 df['data entrega prevista'] = pd.to_datetime(df['data entrega prevista'], errors='coerce')
 df['data entrada'] = pd.to_datetime(df['data entrada'], errors='coerce')
 df['data emissao'] = pd.to_datetime(df['data emissao'], format='%d/%m/%Y', errors='coerce')
@@ -27,7 +26,7 @@ def formatar_moeda(valor, simbolo_moeda="R$"):
         return ''
     return f"{simbolo_moeda} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos'):
+def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos', situacao='todos'):
     df_filtrado = df.copy()
     if ano != 'todos':
         df_filtrado = df_filtrado[df_filtrado['ano'] == ano]
@@ -35,17 +34,21 @@ def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos'):
         df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
     if usuario != 'todos':
         df_filtrado = df_filtrado[df_filtrado['usuario'] == usuario]
+    if situacao != 'todos':
+        df_filtrado = df_filtrado[df_filtrado['situacao pedido'] == situacao]
     return df_filtrado
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     ano = st.selectbox("Ano", ['todos'] + sorted(list(df['ano'].unique())))
 with col2:
     mes = st.selectbox("Mês", ['todos'] + sorted(list(df['mes'].unique())))
 with col3:
     usuario = st.selectbox("Usuário", ['todos'] + sorted(list(df['usuario'].unique())))
+with col4:
+    situacao = st.selectbox("Situação", ['todos'] + sorted(list(df['situacao pedido'].unique())))
 
-df_filtrado = aplicar_filtros(df, ano, mes, usuario)
+df_filtrado = aplicar_filtros(df, ano, mes, usuario, situacao)
 
 def calcular_metricas(df):
     qunatidade_total_pedidos = df['numeropedido'].nunique()
@@ -70,7 +73,6 @@ def card_style(metric_name, value, color="#FFFFFF", bg_color="#262730"):
     </div>
     """
 
-# Calcular as métricas COM O DATAFRAME FILTRADO
 qtd_total_pedidos, valor_total, qtd_total_itens, qtd_entregues, qtd_pendentes = calcular_metricas(df_filtrado)
 
 col1_metricas, col2_metricas, col3_metricas, col4_metricas, col5_metricas = st.columns([1, 1, 1, 1, 1])
@@ -101,7 +103,6 @@ fig_status = px.pie(status_counts, names='status pedido', values='quantidade',
                         title='<b>Distribuição de Status dos Pedidos</b>')
 st.plotly_chart(fig_status, use_container_width=True)
 
-
 # Gráfico de Valor Total dos Pedidos por Mês (Filtrado)
 if not df_filtrado.empty:
     valor_por_mes = df_filtrado.groupby(['ano', 'mes'])['valor liquido item'].sum().reset_index()
@@ -109,12 +110,11 @@ if not df_filtrado.empty:
     valor_por_mes = valor_por_mes.sort_values(by='data_ref')
     valor_por_mes['mes_nome'] = valor_por_mes['data_ref'].dt.strftime('%B')
     valor_por_mes['mes_nome'] = valor_por_mes['mes_nome'].str[0].str.upper() + valor_por_mes['mes_nome'].str[1:]
-    # Formatar os valores para exibição no gráfico e no hover
     valor_por_mes['valor_formatado'] = valor_por_mes['valor liquido item'].apply(formatar_moeda)
     fig_valor_mes = px.bar(valor_por_mes, x='mes_nome', y='valor liquido item',
                             labels={'valor liquido item': 'Valor Total', 'mes_nome': 'Mês'},
                             title='<b>Valor Total dos Pedidos por Mês (Filtrado)</b>',
-                            text='valor_formatado', # Exibir o valor formatado nas barras
+                            text='valor_formatado', 
                             hover_data={'valor liquido item': ':.2f', 'mes_nome': True},
                             height=900, width=1100)
     fig_valor_mes.update_traces(textposition='outside', textfont_size=28)
@@ -136,43 +136,6 @@ fig_top_fornecedores = px.bar(top_10_fornecedores_graf, x='fornecedor', y='valor
 fig_top_fornecedores.update_traces(textposition='outside', textfont_size=28)
 st.plotly_chart(fig_top_fornecedores, use_container_width=True)
 
-
-# Gráfico de Comparativo de Produtos Comprados entre Meses
-if not df.empty:
-    ano_atual = df['ano'].max()
-    mes_atual = df[df['ano'] == ano_atual]['mes'].max()
-
-    ano_anterior = ano_atual
-    mes_anterior = mes_atual - 1
-    if mes_anterior < 1:
-        mes_anterior = 12
-        ano_anterior -= 1
-
-    df_atual_prod = df[(df['ano'] == ano_atual) & (df['mes'] == mes_atual)].groupby('descricao produto')['total itens'].sum().reset_index()
-    df_atual_prod['Mês/Ano'] = f'{mes_atual}/{ano_atual}'
-    df_anterior_prod = df[(df['ano'] == ano_anterior) & (df['mes'] == mes_anterior)].groupby('descricao produto')['total itens'].sum().reset_index()
-    df_anterior_prod['Mês/Ano'] = f'{mes_anterior}/{ano_anterior}'
-
-    df_comparativo_graf = pd.concat([df_atual_prod, df_anterior_prod])
-
-    # Truncar os nomes dos produtos para um máximo de 15 caracteres (ajuste conforme necessário)
-    max_chars = 15
-    df_comparativo_graf['produto_truncado'] = df_comparativo_graf['descricao produto'].apply(lambda x: (x[:max_chars] + '...') if len(x) > max_chars else x)
-
-    fig_comparativo_prod = px.bar(df_comparativo_graf, x='produto_truncado', y='total itens', color='Mês/Ano',
-                                 barmode='group', labels={'total itens': 'Quantidade', 'produto_truncado': 'Produto'},
-                                 title=f'<b>Comparativo de Produtos ({mes_anterior}/{ano_anterior} vs {mes_atual}/{ano_atual})</b>',
-                                 height=700, width=1100) 
-    fig_comparativo_prod.update_layout(
-        xaxis=dict(
-            tickangle=-45,
-            automargin=True
-        )
-    )
-    st.plotly_chart(fig_comparativo_prod, use_container_width=True)
-else:
-    st.info("Não há dados para exibir o comparativo de produtos entre meses.")
-
 st.markdown("---")
 
 
@@ -184,36 +147,20 @@ pedidos_atrasados = df_filtrado[
 
 if len(pedidos_atrasados) > 0:
     st.warning(f"⚠️ Atenção! {len(pedidos_atrasados)} pedidos estão atrasados:")
-    # Filtrar o DataFrame original para exibir informações dos pedidos atrasados únicos
     df_pedidos_atrasados_unicos = df_filtrado[df_filtrado['numeropedido'].isin(pedidos_atrasados)][['numeropedido', 'data entrega prevista', 'fornecedor', 'usuario']].drop_duplicates(subset=['numeropedido'])
-    # Formatar a coluna de data para o formato brasileiro
     df_pedidos_atrasados_unicos['data entrega prevista'] = df_pedidos_atrasados_unicos['data entrega prevista'].dt.strftime('%d/%m/%Y')
     st.dataframe(df_pedidos_atrasados_unicos)
     st.markdown("---")
 # --- FIM DO ALERTA ---
 
 
-
-def lista_pedidos(df):
-    st.subheader(f"Lista de Pedidos")
-    colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'usuario', 'descricao produto',
-                        'prazo', 'tipo produto', 'status pedido']
-    df_exibir = df[colunas_exibir].copy() 
-    # Formatar as colunas de data
-    for col in ['data emissao', 'data entrega prevista']:
-        if col in df_exibir.columns:
-            df_exibir[col] = df_exibir[col].dt.strftime('%d/%m/%Y')
-    st.dataframe(df_exibir)
-
-lista_pedidos(df_filtrado)
-
 def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
         colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'fornecedor', 'total itens', 'valor liquido item']
-        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy() # Crie uma cópia
-        # Formatar as colunas de data
+        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy() 
+        
         for col in ['data emissao', 'data entrega prevista']:
             if col in pedidos_pendentes_exibir.columns:
                 pedidos_pendentes_exibir[col] = pedidos_pendentes_exibir[col].dt.strftime('%d/%m/%Y')
@@ -222,42 +169,26 @@ def listar_pedidos_pendentes_detalhado(df):
     else:
         st.info("Não há pedidos com entrega pendente.")
 
-# Usar o DATAFRAME FILTRADO na função
 listar_pedidos_pendentes_detalhado(df_filtrado)
 
-def listar_top_10_fornecedores(df):
-    df.columns.tolist()
+def calcular_variacao_percentual(row, preco_anterior_col, preco_atual_col):
+    preco_anterior = row[preco_anterior_col]
+    preco_atual = row[preco_atual_col]
+    if preco_anterior == 0 or preco_atual == 0:
+        return 0.0
+    return ((preco_atual - preco_anterior) / preco_anterior) * 100
 
+def aplicar_cor(val):
+    if isinstance(val, (int, float)):
+        if val < 0:
+            color = 'green'
+        elif val > 0:
+            color = 'red'
+        else:
+            color = 'white'
+        return f'color: {color}'
+    return ''
 
-    if df.empty:
-        st.info("O DataFrame filtrado está vazio, não é possível listar os top 10 fornecedores.")
-        return
-
-    if 'fornecedor' not in df.columns or 'valor liquido item' not in df.columns:
-        st.error("Colunas 'fornecedor' ou 'valor liquido item' não encontradas no DataFrame filtrado.")
-        return
-
-    total_por_fornecedor = df.groupby('fornecedor')['valor liquido item'].sum()
-
-    if total_por_fornecedor.empty:
-        st.info("Não há dados de valor total por fornecedor após o agrupamento com o filtro aplicado.")
-        return
-
-    top_10_fornecedores = total_por_fornecedor.sort_values(ascending=False).head(10)
-
-    if not top_10_fornecedores.empty:
-        st.subheader("Top 10 Maiores Fornecedores (por Valor Total dos Pedidos)")
-        top_10_df = pd.DataFrame({'Fornecedor': top_10_fornecedores.index,
-                                    'Valor Total dos Pedidos': top_10_fornecedores.values})
-        top_10_df['Valor Total dos Pedidos'] = top_10_df['Valor Total dos Pedidos'].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
-        st.dataframe(top_10_df)
-    else:
-        st.info("Não há dados suficientes para listar os top 10 fornecedores com o filtro aplicado.")
-
-# Usar o DATAFRAME FILTRADO na função
-listar_top_10_fornecedores(df_filtrado)
-
-# Determinar o mês e ano atual e anterior com base nos dados filtrados
 if not df.empty:
     ano_atual = df['ano'].max()
     mes_atual = df[df['ano'] == ano_atual]['mes'].max()
@@ -288,18 +219,51 @@ if not df.empty:
     df_comparativo = pd.merge(df_comparativo, preco_anterior, on='descricao produto', how='left').fillna(0)
     df_comparativo = pd.merge(df_comparativo, preco_atual, on='descricao produto', how='left').fillna(0)
 
-    # Formatar as colunas de preço usando a função formatar_moeda
+    # Calcular a variação percentual
     coluna_preco_anterior = f'Preço Unitário {mes_anterior}/{ano_anterior}'
     coluna_preco_atual = f'Preço Unitário {mes_atual}/{ano_atual}'
 
-    if coluna_preco_anterior in df_comparativo.columns:
-        df_comparativo[coluna_preco_anterior] = df_comparativo[coluna_preco_anterior].apply(formatar_moeda)
+    if coluna_preco_anterior in df_comparativo.columns and coluna_preco_atual in df_comparativo.columns:
+        df_comparativo['Variação Preço Unitário (%)'] = df_comparativo.apply(
+            lambda row: calcular_variacao_percentual(row, coluna_preco_anterior, coluna_preco_atual),
+            axis=1
+        )
 
-    if coluna_preco_atual in df_comparativo.columns:
+        # Formatar as colunas de preço
+        df_comparativo[coluna_preco_anterior] = df_comparativo[coluna_preco_anterior].apply(formatar_moeda)
         df_comparativo[coluna_preco_atual] = df_comparativo[coluna_preco_atual].apply(formatar_moeda)
 
-    st.subheader(f"Comparativo de Produtos Comprados em {mes_anterior}/{ano_anterior} vs {mes_atual}/{ano_atual}:")
-    st.dataframe(df_comparativo)
+        # Criar o filtro de variação percentual
+        filtro_percentual = st.radio(
+            "Filtrar Variação de Preço:",
+            ["Todos", "Positivos", "Negativos"],
+            horizontal=True
+        )
+
+        df_filtrado = df_comparativo.copy()
+        if filtro_percentual == "Negativos":
+            df_filtrado = df_filtrado[df_filtrado['Variação Preço Unitário (%)'] > 0]
+        elif filtro_percentual == "Positivos":
+            df_filtrado = df_filtrado[df_filtrado['Variação Preço Unitário (%)'] < 0]
+
+        # Aplicar formatação para remover casas decimais nas colunas de quantidade
+        coluna_quantidade_anterior = f'Quantidade {mes_anterior}/{ano_anterior}'
+        coluna_quantidade_atual = f'Quantidade {mes_atual}/{ano_atual}'
+        if coluna_quantidade_anterior in df_filtrado.columns:
+            df_filtrado[coluna_quantidade_anterior] = df_filtrado[coluna_quantidade_anterior].astype(int)
+        if coluna_quantidade_atual in df_filtrado.columns:
+            df_filtrado[coluna_quantidade_atual] = df_filtrado[coluna_quantidade_atual].astype(int)
+
+        # Aplicar estilo para colorir a coluna de variação NO DATAFRAME FILTRADO (ANTES da formatação para string)
+        df_styled = df_filtrado.style.applymap(aplicar_cor, subset=['Variação Preço Unitário (%)'])
+
+        # Formatar a coluna de variação percentual para exibição (DEPOIS da aplicação do estilo)
+        df_styled = df_styled.format({'Variação Preço Unitário (%)': '{:.2f}%'})
+
+        st.subheader(f"Comparativo de Produtos Comprados em {mes_anterior}/{ano_anterior} vs {mes_atual}/{ano_atual}:")
+        st.dataframe(df_styled)
+    else:
+        st.warning("Não foi possível encontrar as colunas de preço para comparação.")
 
 else:
     st.info("Não há dados para análise de produtos com os filtros aplicados.")
