@@ -171,11 +171,26 @@ st.plotly_chart(fig_top_fornecedores, use_container_width=True)
 st.markdown("---")
 
 
+# --- ALERTA DE PEDIDOS ATRASADOS ---
+# hoje = datetime.now().date()
+# pedidos_atrasados = df_filtrado[
+#     (df_filtrado['data entrega prevista'].dt.date < hoje) & (df_filtrado['data entrada'].isna())
+# ]['numeropedido'].unique()
+
+# if len(pedidos_atrasados) > 0:
+#     st.warning(f"⚠️ Atenção! {len(pedidos_atrasados)} pedidos estão atrasados:")
+#     df_pedidos_atrasados_unicos = df_filtrado[df_filtrado['numeropedido'].isin(pedidos_atrasados)][['numeropedido', 'data entrega prevista', 'data entrada', 'fornecedor', 'usuario']].drop_duplicates(subset=['numeropedido'])
+#     df_pedidos_atrasados_unicos['data entrega prevista'] = df_pedidos_atrasados_unicos['data entrega prevista'].dt.strftime('%d/%m/%Y')
+#     st.dataframe(df_pedidos_atrasados_unicos)
+#     st.markdown("---")
+# # --- FIM DO ALERTA ---
+
 
 def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['status pedido'] == 'entrega pendente'].copy()
-    if len(pedidos_pendentes) > 0:
-        st.warning(f"⚠️ Atenção! {len(pedidos_pendentes)} pedidos estão atrasados:")
+    pedidos_unicos = pedidos_pendentes['numeropedido'].nunique()
+    if pedidos_unicos > 0:
+        st.warning(f"⚠️ Atenção! {pedidos_unicos} pedidos estão com entrega pendente:")
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
         colunas_exibir = ['numeropedido', 'data emissao', 'data entrega prevista', 'data entrada', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
