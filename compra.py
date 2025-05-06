@@ -21,12 +21,14 @@ df['data entrega prevista'] = pd.to_datetime(df['data entrega prevista'], errors
 df['data entrada'] = pd.to_datetime(df['data entrada'], errors='coerce')
 df['data emissao'] = pd.to_datetime(df['data emissao'], format='%d/%m/%Y', errors='coerce')
 
-def formatar_moeda(valor, simbolo_moeda="R$"):
-    if pd.isna(valor):
-        return ''
-    return f"{simbolo_moeda} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def formatar_moeda(valor, simbolo_moeda='R$'):
+    try:
+        valor = float(valor)
+        return f"{simbolo_moeda} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        return f"{simbolo_moeda} 0,00"
 
-def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos', situacao='todos'):
+def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos', situacao='todos', tipo_fornecedor='todos'):
     df_filtrado = df.copy()
     ano_atual = datetime.now().year
     meses_abreviados_num_para_abv = {
@@ -50,13 +52,16 @@ def aplicar_filtros(df, ano='todos', mes='todos', usuario='todos', situacao='tod
             df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
             df_filtrado['mes_nome'] = meses_abreviados_num_para_abv.get(mes)
         else:
-            df_filtrado['mes_nome'] = None  # Ou alguma outra forma de indicar um mês inválido
+            df_filtrado['mes_nome'] = None  
 
     if usuario != 'todos':
         df_filtrado = df_filtrado[df_filtrado['usuario'] == usuario]
 
     if situacao != 'todos':
         df_filtrado = df_filtrado[df_filtrado['situacao pedido'] == situacao]
+
+    if tipo_fornecedor != 'todos':
+        df_filtrado = df_filtrado[df_filtrado['tipo fornecedor'] == tipo_fornecedor]
 
     return df_filtrado
 
@@ -68,7 +73,7 @@ meses_abreviados_num_para_abv = {
 meses_ano_atual_numericos = sorted(list(df[df['ano'] == ano_atual]['mes'].unique()))
 meses_ano_atual_nomes = ['todos'] + [meses_abreviados_num_para_abv[mes] for mes in meses_ano_atual_numericos]
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     anos_unicos = ['todos'] + sorted(list(df['ano'].unique()))
     index_ano_atual = anos_unicos.index(ano_atual) if ano_atual in anos_unicos else 0
@@ -79,8 +84,10 @@ with col3:
     usuario = st.selectbox("Usuário", ['todos'] + sorted(list(df['usuario'].unique())))
 with col4:
     situacao = st.selectbox("Situação", ['todos'] + sorted(list(df['situacao pedido'].unique())))
+with col5:
+    tipo_fornecedor = st.selectbox("Tipo de Fornecedor", ['todos'] + sorted(list(df['tipo fornecedor'].unique())))
 
-df_filtrado = aplicar_filtros(df, ano, mes, usuario, situacao)
+df_filtrado = aplicar_filtros(df, ano, mes, usuario, situacao, tipo_fornecedor)
 
 def calcular_metricas(df):
     qunatidade_total_pedidos = df['numeropedido'].nunique()
@@ -135,10 +142,10 @@ fig_status = px.pie(status_counts, names='status pedido', values='quantidade',
                     title='<b>Distribuição de Status dos Pedidos</b>')
 st.plotly_chart(fig_status, use_container_width=True)
 
-# Gráfico de Valor Total dos Pedidos por Mês (Filtrado)
+# Gráfico de Valor Total dos Pedidos por Mês 
 if not df_filtrado.empty:
     valor_por_mes = df_filtrado.groupby(['ano', 'mes_nome'])['valor liquido item'].sum().reset_index()
-    valor_por_mes.rename(columns={'mes_nome': 'mes'}, inplace=True) # Renomeia para usar a coluna de nome do mês
+    valor_por_mes.rename(columns={'mes_nome': 'mes'}, inplace=True) 
     meses_ordenados = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     valor_por_mes['mes_ordenado'] = pd.Categorical(valor_por_mes['mes'], categories=meses_ordenados, ordered=True)
     valor_por_mes = valor_por_mes.sort_values('mes_ordenado')
@@ -171,21 +178,6 @@ st.plotly_chart(fig_top_fornecedores, use_container_width=True)
 st.markdown("---")
 
 
-# --- ALERTA DE PEDIDOS ATRASADOS ---
-# hoje = datetime.now().date()
-# pedidos_atrasados = df_filtrado[
-#     (df_filtrado['data entrega prevista'].dt.date < hoje) & (df_filtrado['data entrada'].isna())
-# ]['numeropedido'].unique()
-
-# if len(pedidos_atrasados) > 0:
-#     st.warning(f"⚠️ Atenção! {len(pedidos_atrasados)} pedidos estão atrasados:")
-#     df_pedidos_atrasados_unicos = df_filtrado[df_filtrado['numeropedido'].isin(pedidos_atrasados)][['numeropedido', 'data entrega prevista', 'data entrada', 'fornecedor', 'usuario']].drop_duplicates(subset=['numeropedido'])
-#     df_pedidos_atrasados_unicos['data entrega prevista'] = df_pedidos_atrasados_unicos['data entrega prevista'].dt.strftime('%d/%m/%Y')
-#     st.dataframe(df_pedidos_atrasados_unicos)
-#     st.markdown("---")
-# # --- FIM DO ALERTA ---
-
-
 def listar_pedidos_pendentes_detalhado(df):
     pedidos_pendentes = df[df['situacao pedido'] == 'pendente'].copy()
     pedidos_unicos = pedidos_pendentes['numeropedido'].nunique()
@@ -193,18 +185,50 @@ def listar_pedidos_pendentes_detalhado(df):
         st.warning(f"⚠️ Atenção! {pedidos_unicos} pedidos estão com entrega pendente:")
     if not pedidos_pendentes.empty:
         st.subheader("Pedidos Pendentes")
-        colunas_exibir = ['numeropedido', 'status pedido', 'data emissao', 'data entrega prevista', 'data entrada', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
-        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir].copy()
+        colunas_exibir_originais = ['numeropedido', 'status pedido', 'data emissao', 'data entrega prevista', 'data entrada', 'fornecedor', 'descricao produto', 'total itens', 'valor liquido item']
+        pedidos_pendentes_exibir = pedidos_pendentes[colunas_exibir_originais].copy()
 
+        # Converter as colunas de data para datetime
         for col in ['data emissao', 'data entrega prevista']:
             if col in pedidos_pendentes_exibir.columns:
-                pedidos_pendentes_exibir[col] = pedidos_pendentes_exibir[col].dt.strftime('%d/%m/%Y')
-        pedidos_pendentes_exibir['valor liquido item'] = pedidos_pendentes_exibir['valor liquido item'].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
-        st.dataframe(pedidos_pendentes_exibir)
+                pedidos_pendentes_exibir[col] = pd.to_datetime(pedidos_pendentes_exibir[col], format='%d/%m/%Y', errors='coerce')
+                nao_datetime = pedidos_pendentes_exibir[pd.isna(pedidos_pendentes_exibir[col])]
+                if not nao_datetime.empty:
+                    st.warning(f"⚠️ Atenção! Alguns valores na coluna '{col}' não puderam ser convertidos para data. Verifique os dados.")
+                    st.dataframe(nao_datetime[[col]])
+
+        # Calcular o prazo de entrega em dias
+        if 'data emissao' in pedidos_pendentes_exibir.columns and 'data entrega prevista' in pedidos_pendentes_exibir.columns:
+            pedidos_pendentes_exibir['prazo entrega (dias)'] = (pedidos_pendentes_exibir['data entrega prevista'] - pedidos_pendentes_exibir['data emissao']).dt.days
+            colunas_exibir = colunas_exibir_originais + ['prazo entrega (dias)']
+        else:
+            st.error("Erro: As colunas de data não foram convertidas corretamente. O cálculo do prazo de entrega não será realizado.")
+            colunas_exibir = colunas_exibir_originais
+
+        # 👉 Calcular o total antes de formatar os valores
+        total_valor_liquido = pedidos_pendentes_exibir['valor liquido item'].sum()
+
+        # Formatar colunas para exibição
+        pedidos_pendentes_exibir_formatado = pedidos_pendentes_exibir[colunas_exibir].copy()
+        for col in ['data emissao', 'data entrega prevista']:
+            if col in pedidos_pendentes_exibir_formatado.columns and pd.api.types.is_datetime64_any_dtype(pedidos_pendentes_exibir_formatado[col]):
+                pedidos_pendentes_exibir_formatado[col] = pedidos_pendentes_exibir_formatado[col].dt.strftime('%d/%m/%Y')
+
+        pedidos_pendentes_exibir_formatado['valor liquido item'] = pedidos_pendentes_exibir_formatado['valor liquido item'].apply(
+            lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
+        st.dataframe(pedidos_pendentes_exibir_formatado)
+
+        # Exibir total formatado
+        st.info(f"Valor Total dos Pedidos Pendentes: {formatar_moeda(total_valor_liquido)}")
+
     else:
         st.info("Não há pedidos com entrega pendente.")
 
-listar_pedidos_pendentes_detalhado(df_filtrado)
+listar_pedidos_pendentes_detalhado(df)
+
+
 
 def calcular_variacao_percentual(row, preco_anterior_col, preco_atual_col):
     preco_anterior = row[preco_anterior_col]
