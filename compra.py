@@ -4,6 +4,7 @@ import streamlit as st
 from datetime import datetime
 import plotly.express as px
 import locale
+from datetime import datetime, timedelta
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -20,6 +21,91 @@ df = pd.read_csv('df_compra.csv')
 df['data entrega prevista'] = pd.to_datetime(df['data entrega prevista'], errors='coerce')
 df['data entrada'] = pd.to_datetime(df['data entrada'], errors='coerce')
 df['data emissao'] = pd.to_datetime(df['data emissao'], format='%d/%m/%Y', errors='coerce')
+
+def calcular_prazo_medio_e_frequencia(df):
+    
+    hoje = datetime.now()
+    tres_meses_atras = hoje - timedelta(days=90) # Aproximadamente 3 meses
+
+    # Filtrar as compras dos últimos 3 meses
+    df_recentes = df[df['data emissao'] >= tres_meses_atras].copy()
+
+    if df_recentes.empty:
+        return pd.DataFrame(columns=['Produto', 'Prazo Médio de Compra (dias)', 'Frequência de Compra'])
+
+    # Ordenar por produto e data de emissão
+    df_recentes = df_recentes.sort_values(by=['descricao produto', 'data emissao'])
+
+    # Calcular a diferença entre as datas de emissão para cada produto
+    df_recentes['data_anterior'] = df_recentes.groupby('descricao produto')['data emissao'].shift(1)
+    df_recentes['diferenca_dias'] = (df_recentes['data emissao'] - df_recentes['data_anterior']).dt.days
+
+    # Calcular o prazo médio de compra
+    prazo_medio = df_recentes.groupby('descricao produto')['diferenca_dias'].mean().fillna(0).round(2)
+
+    # Calcular a frequência de compra (contagem de pedidos por produto)
+    frequencia = df_recentes['descricao produto'].value_counts().sort_index()
+
+    # Criar o DataFrame de resultado
+    df_resultado = pd.DataFrame({
+        'Prazo Médio de Compra (dias)': prazo_medio,
+        'Frequência de Compra': frequencia
+    })
+
+    df_resultado = df_resultado.reset_index().rename(columns={'descricao produto': 'Produto'})
+
+    return df_resultado
+
+def analisar_melhores_e_piores_negociacoes_precos_ultimos_90_dias(df):
+    """
+    Analisa os 10 melhores (menores preços de compra) e os 10 piores (maiores preços de compra)
+    negociações nos últimos 90 dias.
+
+    Args:
+        df (pd.DataFrame): DataFrame contendo as colunas 'descricao produto', 'data emissao' e 'preco unitario liquido item'.
+                           A coluna 'data emissao' deve estar no formato datetime.
+
+    Returns:
+        tuple: Uma tupla contendo dois DataFrames:
+               - df_melhores: DataFrame com os 10 menores preços de compra distintos nos últimos 90 dias.
+               - df_piores: DataFrame com os 10 maiores preços de compra distintos nos últimos 90 dias.
+    """
+    hoje = datetime.now()
+    noventa_dias_atras = hoje - timedelta(days=90)
+
+    # Filtrar o DataFrame para incluir apenas os dados dos últimos 90 dias
+    df_recentes = df[df['data emissao'] >= noventa_dias_atras].copy()
+
+    if df_recentes.empty:
+        return pd.DataFrame(columns=['Produto', 'Preço Unitário']), pd.DataFrame(columns=['Produto', 'Preço Unitário'])
+
+    # Ordenar os dados recentes por produto, data de emissão (descendente) e preço (ascendente)
+    df_ordenado = df_recentes.sort_values(by=['descricao produto', 'data emissao', 'preco unitario liquido item'],
+                                        ascending=[True, False, True])
+
+    # Selecionar o menor preço recente por produto
+    df_menores_precos = df_ordenado.groupby('descricao produto').first().reset_index()
+
+    # Ordenar pelos menores preços e selecionar os 10 primeiros
+    top_10_menores = df_menores_precos.sort_values(by='preco unitario liquido item').head(10)
+    df_melhores = top_10_menores[['descricao produto', 'preco unitario liquido item']].rename(
+        columns={'descricao produto': 'Produto', 'preco unitario liquido item': 'Preço Unitário'})
+
+    # Ordenar os dados recentes por produto, data de emissão (descendente) e preço (descendente)
+    df_ordenado_maior = df_recentes.sort_values(by=['descricao produto', 'data emissao', 'preco unitario liquido item'],
+                                            ascending=[True, False, False])
+
+    # Selecionar o maior preço recente por produto
+    df_maiores_precos = df_ordenado_maior.groupby('descricao produto').first().reset_index()
+
+    # Ordenar pelos maiores preços e selecionar os 10 primeiros
+    top_10_maiores = df_maiores_precos.sort_values(by='preco unitario liquido item', ascending=False).head(10)
+    df_piores = top_10_maiores[['descricao produto', 'preco unitario liquido item']].rename(
+        columns={'descricao produto': 'Produto', 'preco unitario liquido item': 'Preço Unitário'})
+
+    return df_melhores, df_piores
+
+
 
 def formatar_moeda(valor, simbolo_moeda='R$'):
     try:
@@ -326,3 +412,26 @@ if not df.empty:
 
 else:
     st.info("Não há dados para análise de produtos com os filtros aplicados.")
+
+st.subheader("Análise de Prazo Médio e Frequência de Compra")
+df_prazo_frequencia = calcular_prazo_medio_e_frequencia(df.copy()) # Passe uma cópia para evitar modificações no DataFrame original
+if not df_prazo_frequencia.empty:
+    st.dataframe(df_prazo_frequencia)
+else:
+    st.info("Não há dados de compra nos últimos 3 meses para calcular o prazo médio e a frequência.")
+
+
+st.subheader("Análise dos Melhores e Piores Preços (Últimos 90 Dias)")
+df_melhores_precos, df_piores_precos = analisar_melhores_e_piores_negociacoes_precos_ultimos_90_dias(df.copy())
+
+if not df_melhores_precos.empty:
+    st.subheader("Top 10 Melhores Preços Recentes")
+    st.dataframe(df_melhores_precos)
+else:
+    st.info("Não há dados suficientes para identificar os melhores preços recentes.")
+
+if not df_piores_precos.empty:
+    st.subheader("Top 10 Piores Preços Recentes")
+    st.dataframe(df_piores_precos)
+else:
+    st.info("Não há dados suficientes para identificar os piores preços recentes.")
